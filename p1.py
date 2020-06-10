@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import nltk
 import pprint as pp
 # CountVectorizer will help calculate word counts
 from sklearn.feature_extraction.text import CountVectorizer
@@ -8,6 +9,8 @@ import string
 # Make training/test split
 from sklearn.model_selection import train_test_split
 
+w_tokenizer = nltk.tokenize.WhitespaceTokenizer()
+lemmatizer = nltk.stem.WordNetLemmatizer()
 
 def build_vocab(cv, count_df, train):
     neg_count_df, pos_count_df, neutral_count_df = count_df
@@ -39,11 +42,11 @@ def build_vocab(cv, count_df, train):
 
     for key, value in neg_words.items():
         neg_words_adj[key] = neg_words[key] - (neutral_words[key] + pos_words[key])
-        neg_words_adj[key] /= np.abs(neg_words_adj[key])
+        # neg_words_adj[key] /= np.abs(neg_words_adj[key])
 
     for key, value in pos_words.items():
         pos_words_adj[key] = pos_words[key] - (neutral_words[key] + neg_words[key])
-        pos_words_adj[key] /= np.abs(pos_words_adj[key])
+        # pos_words_adj[key] /= np.abs(pos_words_adj[key])
 
 
     for key, value in neutral_words.items():
@@ -55,23 +58,28 @@ def build_vocab(cv, count_df, train):
     return (neg_words_adj, pos_words_adj, neutral_words_adj)
 
 def calculate_selected_text(pos_words_adj, neg_words_adj, df_row, tol = 0):
-        tweet = df_row['text']
-        sentiment = df_row['sentiment']
+        tweet      = df_row['text_lemmas']
+        tweet_real = df_row['text']
+        sentiment  = df_row['sentiment']
 
         if(sentiment == 'neutral'):
-            return tweet
+            return tweet_real
         elif(sentiment == 'positive'):
             dict_to_use = pos_words_adj # Calculate word weights using the pos_words dictionary
         elif(sentiment == 'negative'):
             dict_to_use = neg_words_adj # Calculate word weights using the neg_words dictionary
 
-        words = tweet.split()
-        words_len = len(words)
-        subsets = [words[i:j+1] for i in range(words_len) for j in range(i,words_len)]
+        words          = tweet.split()
+        words_real     = tweet_real.split()
+        words_len      = len(words)
+        words_len_real = len(words)
+        subsets        = [words[i:j+1] for i in range(words_len) for j in range(i,words_len)]
+        subsets_real   = [words_real[i:j+1] for i in range(words_len_real) for j in range(i,words_len_real)]
 
         score = 0
         selection_str = '' # This will be our choice
-        lst = sorted(subsets, key = len) # Sort candidates by length
+        lst      = sorted(subsets, key = len) # Sort candidates by length
+        lst_real = sorted(subsets_real, key = len)
 
         for i in range(len(subsets)):
 
@@ -85,7 +93,7 @@ def calculate_selected_text(pos_words_adj, neg_words_adj, df_row, tol = 0):
             # If the sum is greater than the score, update our current selection
             if(new_sum > score + tol):
                 score = new_sum
-                selection_str = lst[i]
+                selection_str = lst_real[i]
                 #tol = tol*5 # Increase the tolerance a bit each time we choose a selection
 
         # If we didn't find good substrings, return the whole text
@@ -106,6 +114,9 @@ def which_longer(truth, prediction):
 
     return float(len(pred_set) - len(truth_set))
 
+def lemmatize_text(text):
+    return ' '.join([lemmatizer.lemmatize(w) for w in w_tokenizer.tokenize(text)])
+
 def load_data():
     # Import datasets
     train = pd.read_csv('./data/train.csv')
@@ -119,14 +130,16 @@ def load_data():
 
     # Make all the text lowercase - casing doesn't matter when
     # we choose our selected text.
-    train['text'] = train['text'].apply(lambda x: x.lower())
-    test['text'] = test['text'].apply(lambda x: x.lower())
+    train['text']        = train['text'].apply(lambda x: x.lower())
+    train['text_lemmas'] = train['text'].apply(lemmatize_text)
+    test['text']         =  test['text'].apply(lambda x: x.lower())
+    test['text_lemmas']  =  test['text'].apply(lemmatize_text)
     return train, test, sample
 
 
 def main():
     tol = 0.001
-
+    nltk.download('wordnet')
     train, test, sample = load_data()
     # Modify code here to implent k-fold x validation
     K = 10
@@ -147,9 +160,9 @@ def main():
         
         #X_train, X_val = train_test_split(train, train_size = 0.80, random_state = 0)
 
+        neg_train = X_train[X_train['sentiment'] == 'negative']
         pos_train = X_train[X_train['sentiment'] == 'positive']
         neutral_train = X_train[X_train['sentiment'] == 'neutral']
-        neg_train = X_train[X_train['sentiment'] == 'negative']
 
         # Use CountVectorizer to get the word counts within each dataset
         cv = CountVectorizer(max_df=0.95, min_df=2, max_features=10000, stop_words='english')
@@ -157,13 +170,13 @@ def main():
         # X_train_cv = cv.fit_transform(X_train['text'])
         cv.fit_transform(X_train['text'])
 
-        X_pos = cv.transform(pos_train['text'])
-        X_neutral = cv.transform(neutral_train['text'])
-        X_neg = cv.transform(neg_train['text'])
+        X_pos = cv.transform(pos_train['text_lemmas'])
+        X_neutral = cv.transform(neutral_train['text_lemmas'])
+        X_neg = cv.transform(neg_train['text_lemmas'])
 
+        neg_count_df = pd.DataFrame(X_neg.toarray(), columns=cv.get_feature_names())
         pos_count_df = pd.DataFrame(X_pos.toarray(), columns=cv.get_feature_names())
         neutral_count_df = pd.DataFrame(X_neutral.toarray(), columns=cv.get_feature_names())
-        neg_count_df = pd.DataFrame(X_neg.toarray(), columns=cv.get_feature_names())
 
         count_df = (neg_count_df, pos_count_df, neutral_count_df)
         train_df = (neg_train, pos_train, neutral_train)
