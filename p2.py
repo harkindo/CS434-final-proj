@@ -273,6 +273,8 @@ def main():
     K = 5
     indexes = np.arange(train.shape[0])
     np.random.shuffle(indexes)
+    bestScore = 0
+    bestModel = None
 
     for group in range(K):
         group_start = int(group * (indexes.shape[0] / K ))
@@ -301,7 +303,11 @@ def main():
         print('The selected text for positive is on average {} words different'.format(str(np.mean((X_val[X_val['sentiment'] == 'positive'])['which_longer']))))
         print('The selected text for neutral is on average {} words different'.format(str(np.mean((X_val[X_val['sentiment'] == 'neutral'])['which_longer']))))
 
+        if np.mean(X_val['jaccard']) > bestScore:
+            bestModel = (posLogisticModel, negLogisticModel, word2vecModel)
 
+    (posLogisticModel, negLogisticModel, word2vecModel) = bestModel
+    
     for index, row in test.iterrows():
         selected_text = calculate_selected_text(row, posLogisticModel, negLogisticModel, word2vecModel)
         sample.loc[sample['textID'] == row['textID'], ['selected_text']] = selected_text
