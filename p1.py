@@ -39,18 +39,13 @@ def build_vocab(cv, count_df, train):
 
     for key, value in neg_words.items():
         neg_words_adj[key] = neg_words[key] - (neutral_words[key] + pos_words[key])
-        neg_words_adj[key] /= np.abs(neg_words_adj[key])
 
     for key, value in pos_words.items():
         pos_words_adj[key] = pos_words[key] - (neutral_words[key] + neg_words[key])
-        pos_words_adj[key] /= np.abs(pos_words_adj[key])
 
 
     for key, value in neutral_words.items():
         neutral_words_adj[key] = neutral_words[key] - (neg_words[key] + pos_words[key])
-        #neutral_words_adj[key] *= np.abs(neutral_words_adj[key])
-
-    # pp.pprint(pos_words_adj)
 
     return (neg_words_adj, pos_words_adj, neutral_words_adj)
 
@@ -130,6 +125,8 @@ def main():
     train, test, sample = load_data()
     # Modify code here to implent k-fold x validation
     K = 10
+    jaccard_scores = []
+    vocab_weights = []
     indexes = np.arange(train.shape[0])
     np.random.shuffle(indexes)
     print("Indexes shape: " + str(indexes.shape))
@@ -169,6 +166,11 @@ def main():
         train_df = (neg_train, pos_train, neutral_train)
         neg_words_adj, pos_words_adj, neutral_words_adj = build_vocab(cv, count_df, train_df)
 
+        vocab_weights.append({
+            'neg': neg_words_adj,
+            'pos': pos_words_adj,
+            'neu': neutral_words_adj
+        })
         pd.options.mode.chained_assignment = None
  
         X_val['predicted_selection'] = ''
@@ -179,33 +181,39 @@ def main():
 
         X_val['which_longer'] = X_val.apply(lambda x: which_longer(x['selected_text'], x['predicted_selection']), axis = 1)
         X_val['jaccard'] = X_val.apply(lambda x: jaccard(x['selected_text'], x['predicted_selection']), axis = 1)
+        jaccard_scores.append(np.mean(X_val['jaccard']))
+        print('-------------------------------- K = ' + str(group + 1) + ' ---------------------------------------------')
         print('The jaccard score for the validation set is:', np.mean(X_val['jaccard']))
         print('The selected text for negative is on average {} words smaller'.format(str(np.mean((X_val[X_val['sentiment'] == 'negative'])['which_longer']))))
         print('The selected text for positive is on average {} words smaller'.format(str(np.mean((X_val[X_val['sentiment'] == 'positive'])['which_longer']))))
         print('The selected text for neutral is on average {} words smaller'.format(str(np.mean((X_val[X_val['sentiment'] == 'neutral'])['which_longer']))))
 
+    max_vocab_weights = vocab_weights[jaccard_scores.index(max(jaccard_scores))]
+    neg_words_adj = max_vocab_weights['neg']
+    pos_words_adj = max_vocab_weights['pos']
+    neutral_words_adj = max_vocab_weights['neu']
 
-    pos_tr = train[train['sentiment'] == 'positive']
-    neutral_tr = train[train['sentiment'] == 'neutral']
-    neg_tr = train[train['sentiment'] == 'negative']
+    # pos_tr = train[train['sentiment'] == 'positive']
+    # neutral_tr = train[train['sentiment'] == 'neutral']
+    # neg_tr = train[train['sentiment'] == 'negative']
 
-    cv = CountVectorizer(max_df=0.95, min_df=2, max_features=10000, stop_words='english')
+    # cv = CountVectorizer(max_df=0.95, min_df=2, max_features=10000, stop_words='english')
 
-    # final_cv = cv.fit_transform(train['text'])
-    cv.fit_transform(train['text'])
+    # # final_cv = cv.fit_transform(train['text'])
+    # cv.fit_transform(train['text'])
 
-    X_pos = cv.transform(pos_tr['text'])
-    X_neutral = cv.transform(neutral_tr['text'])
-    X_neg = cv.transform(neg_tr['text'])
+    # X_pos = cv.transform(pos_tr['text'])
+    # X_neutral = cv.transform(neutral_tr['text'])
+    # X_neg = cv.transform(neg_tr['text'])
 
-    pos_final_count_df = pd.DataFrame(X_pos.toarray(), columns=cv.get_feature_names())
-    neutral_final_count_df = pd.DataFrame(X_neutral.toarray(), columns=cv.get_feature_names())
-    neg_final_count_df = pd.DataFrame(X_neg.toarray(), columns=cv.get_feature_names())
+    # pos_final_count_df = pd.DataFrame(X_pos.toarray(), columns=cv.get_feature_names())
+    # neutral_final_count_df = pd.DataFrame(X_neutral.toarray(), columns=cv.get_feature_names())
+    # neg_final_count_df = pd.DataFrame(X_neg.toarray(), columns=cv.get_feature_names())
     
     
-    count_df_final = (neg_final_count_df, pos_final_count_df, neutral_final_count_df)
-    tr = (neg_tr, pos_tr, neutral_tr)
-    neg_words_adj, pos_words_adj, neutral_words_adj = build_vocab(cv, count_df_final, tr)
+    # count_df_final = (neg_final_count_df, pos_final_count_df, neutral_final_count_df)
+    # tr = (neg_tr, pos_tr, neutral_tr)
+    # neg_words_adj, pos_words_adj, neutral_words_adj = build_vocab(cv, count_df_final, tr)
 
 
     for index, row in test.iterrows():
